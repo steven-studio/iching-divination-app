@@ -5,7 +5,9 @@
   "scripts": {
     "start": "bunx rork start -p vf31ulmnzws7zefxqhx5m --tunnel",
     "start-web": "bunx rork start -p vf31ulmnzws7zefxqhx5m --web --tunnel",
-    "start-web-dev": "DEBUG=expo* bunx rork start -p vf31ulmnzws7zefxqhx5m --web --tunnel"
+    "start-web-dev": "DEBUG=expo* bunx rork start -p vf31ulmnzws7zefxqhx5m --web --tunnel",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
@@ -50,5 +52,6 @@
     "@types/react": "~19.0.10",
     "typescript": "~5.8.3"
   },
-  "private": true
+  "private": true,
+  "packageManager": "npm@^10"
 }
