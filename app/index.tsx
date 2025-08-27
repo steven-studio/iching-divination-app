@@ -16,7 +16,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 type FormState = {
   n1: string;
@@ -35,6 +35,9 @@ export default function DivinationScreen() {
   const [locale, setLocale] = useState<string>("zh-TW");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const startedAtRef = useRef<number | undefined>(undefined);
+  const n1Ref = useRef<TextInput>(null);
+  const n2Ref = useRef<TextInput>(null);
+  const n3Ref = useRef<TextInput>(null);
   
   const { paymentState, canUseFree, needsPayment, consumeFreeUse, markAsPaid, isLoading: paymentLoading } = usePayment();
 
@@ -46,7 +49,15 @@ export default function DivinationScreen() {
       if (raw) {
         try {
           const parsed = JSON.parse(raw) as HistoryItem[];
-          setHistory(Array.isArray(parsed) ? parsed : []);
+          if (Array.isArray(parsed)) {
+            // 過濾掉不完整的歷史記錄（向後兼容）
+            const validHistory = parsed.filter((item) => 
+              item.question && item.lowerTrigram && item.upperTrigram && item.explanation
+            );
+            setHistory(validHistory);
+          } else {
+            setHistory([]);
+          }
         } catch {
           setHistory([]);
         }
@@ -55,7 +66,17 @@ export default function DivinationScreen() {
   }, []);
 
   const onChangeN = useCallback((key: "n1" | "n2" | "n3", v: string) => {
-    setForm((prev) => ({ ...prev, [key]: normalizeDigits(v, 3) }));
+    const normalized = normalizeDigits(v, 3);
+    setForm((prev) => ({ ...prev, [key]: normalized }));
+    
+    // 自動跳轉到下一個輸入框
+    if (normalized.length === 3) {
+      if (key === "n1" && n2Ref.current) {
+        n2Ref.current.focus();
+      } else if (key === "n2" && n3Ref.current) {
+        n3Ref.current.focus();
+      }
+    }
   }, []);
 
   const onBlurPad = useCallback((key: "n1" | "n2" | "n3") => {
@@ -97,8 +118,12 @@ export default function DivinationScreen() {
         n1: Number(form.n1),
         n2: Number(form.n2),
         n3: Number(form.n3),
+        question: form.question.trim(),
         hexagramName: data.hexagramName,
         changingLine: data.changingLine,
+        lowerTrigram: data.lowerTrigram,
+        upperTrigram: data.upperTrigram,
+        explanation: data.explanation,
       };
       const next = [item, ...history].slice(0, HISTORY_MAX);
       setHistory(next);
@@ -201,24 +226,29 @@ export default function DivinationScreen() {
             </View>
             <View style={styles.row3}>
               <DigitInput
+                ref={n1Ref}
                 label="數字一"
                 value={form.n1}
                 onChangeText={(v) => onChangeN("n1", v)}
                 onBlur={() => onBlurPad("n1")}
+                onSubmitEditing={() => n2Ref.current?.focus()}
                 error={errors.n1}
                 testID="input-n1"
                 width={72}
               />
               <DigitInput
+                ref={n2Ref}
                 label="數字二"
                 value={form.n2}
                 onChangeText={(v) => onChangeN("n2", v)}
                 onBlur={() => onBlurPad("n2")}
+                onSubmitEditing={() => n3Ref.current?.focus()}
                 error={errors.n2}
                 testID="input-n2"
                 width={72}
               />
               <DigitInput
+                ref={n3Ref}
                 label="數字三"
                 value={form.n3}
                 onChangeText={(v) => onChangeN("n3", v)}

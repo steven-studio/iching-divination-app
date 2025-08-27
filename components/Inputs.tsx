@@ -1,6 +1,6 @@
-import React, { memo } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
 import Colors from "@/constants/colors";
+import { forwardRef, memo } from "react";
+import { StyleSheet, Text, TextInput, View } from "react-native";
 
 type DigitInputProps = {
   label: string;
@@ -10,9 +10,10 @@ type DigitInputProps = {
   error?: string;
   testID?: string;
   width?: number;
+  onSubmitEditing?: () => void;
 };
 
-export const DigitInput = memo(function DigitInput({
+export const DigitInput = memo(forwardRef<TextInput, DigitInputProps>(function DigitInput({
   label,
   value,
   onChangeText,
@@ -20,16 +21,19 @@ export const DigitInput = memo(function DigitInput({
   error,
   testID,
   width,
-}: DigitInputProps) {
+  onSubmitEditing,
+}: DigitInputProps, ref) {
   const isEmpty = value.length === 0;
   return (
     <View style={[styles.field, width ? { width } : undefined]} testID={testID ? `${testID}-field` : undefined}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        ref={ref}
         style={[styles.input, error ? styles.inputError : undefined, isEmpty ? styles.centerText : styles.leftText]}
         value={value}
         onChangeText={onChangeText}
         onBlur={onBlur}
+        onSubmitEditing={onSubmitEditing}
         keyboardType="numeric"
         maxLength={3}
         placeholder="000"
@@ -46,7 +50,7 @@ export const DigitInput = memo(function DigitInput({
       )}
     </View>
   );
-});
+}));
 
 type TextAreaProps = {
   label: string;

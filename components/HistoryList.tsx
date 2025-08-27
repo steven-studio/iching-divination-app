@@ -1,3 +1,4 @@
+import { HistoryDetailModal } from "@/components/HistoryDetailModal";
 import Colors from "@/constants/colors";
 import type { HistoryItem } from "@/types/history";
 import { MaterialIcons } from '@expo/vector-icons';
@@ -10,7 +11,19 @@ type Props = {
 
 export const HistoryList = memo(function HistoryList({ items }: Props) {
   const [open, setOpen] = useState<boolean>(true);
+  const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
   const sorted = useMemo(() => [...items].sort((a, b) => b.timestamp - a.timestamp), [items]);
+  
+  const handleItemPress = (item: HistoryItem) => {
+    setSelectedItem(item);
+    setShowDetailModal(true);
+  };
+  
+  const handleCloseModal = () => {
+    setShowDetailModal(false);
+    setSelectedItem(null);
+  };
 
   return (
     <View style={styles.container} testID="history-section">
@@ -32,18 +45,32 @@ export const HistoryList = memo(function HistoryList({ items }: Props) {
             <Text style={styles.empty}>尚無紀錄</Text>
           ) : (
             sorted.map((h) => (
-              <View key={String(h.timestamp)} style={styles.item}>
-                <Text style={styles.itemTime}>{formatTime(h.timestamp)}</Text>
-                <Text style={styles.itemNums}>
-                  {String(h.n1).padStart(3, "0")}-{String(h.n2).padStart(3, "0")}-{String(h.n3).padStart(3, "0")}
-                </Text>
-                <Text style={styles.itemHex}>{h.hexagramName}</Text>
-                <Text style={styles.itemLine}>第 {h.changingLine} 爻</Text>
-              </View>
+              <Pressable
+                key={String(h.timestamp)}
+                style={({ pressed }) => [styles.item, pressed ? styles.itemPressed : undefined]}
+                onPress={() => handleItemPress(h)}
+                testID={`history-item-${h.timestamp}`}
+              >
+                <View style={styles.itemContent}>
+                  <Text style={styles.itemTime}>{formatTime(h.timestamp)}</Text>
+                  <Text style={styles.itemNums}>
+                    {String(h.n1).padStart(3, "0")}-{String(h.n2).padStart(3, "0")}-{String(h.n3).padStart(3, "0")}
+                  </Text>
+                  <Text style={styles.itemHex}>{h.hexagramName}</Text>
+                  <Text style={styles.itemLine}>第 {h.changingLine} 爻</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={16} color={Colors.light.muted} />
+              </Pressable>
             ))
           )}
         </View>
       )}
+      
+      <HistoryDetailModal
+        visible={showDetailModal}
+        item={selectedItem}
+        onClose={handleCloseModal}
+      />
     </View>
   );
 });
@@ -66,7 +93,24 @@ const styles = StyleSheet.create({
   headerTitle: { color: Colors.light.muted, fontWeight: "600" },
   list: { marginTop: 8, gap: 8 },
   empty: { color: Colors.light.muted, fontSize: 13 },
-  item: { flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" },
+  item: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+  },
+  itemPressed: {
+    backgroundColor: "#F3F4F6",
+  },
+  itemContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+    flexWrap: "wrap",
+  },
   itemTime: { color: Colors.light.muted, width: 130 },
   itemNums: { fontWeight: "600", width: 110 },
   itemHex: { flexShrink: 1, flexGrow: 1 },
