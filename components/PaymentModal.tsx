@@ -25,10 +25,6 @@ export function PaymentModal({ visible, onClose, onPaymentSuccess, freeUsesRemai
         return <Ionicons name="logo-apple" size={24} color={Colors.light.text} />;
       case 'google_pay':
         return <Ionicons name="logo-google" size={24} color={Colors.light.text} />;
-      case 'line_pay':
-        return <MaterialIcons name="flash-on" size={24} color="#00C300" />;
-      case 'credit_card':
-        return <MaterialIcons name="credit-card" size={24} color={Colors.light.text} />;
     }
   };
 
@@ -38,10 +34,6 @@ export function PaymentModal({ visible, onClose, onPaymentSuccess, freeUsesRemai
         return 'Apple Pay';
       case 'google_pay':
         return 'Google Pay';
-      case 'line_pay':
-        return 'LINE Pay';
-      case 'credit_card':
-        return '信用卡';
     }
   };
 
