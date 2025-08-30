@@ -1,16 +1,31 @@
 import { API_CONFIG } from '@/constants/config';
 import { Alert, Platform } from 'react-native';
 
-// Only import Stripe on native platforms to avoid web bundling issues
-let initStripe: any = null;
-if (Platform.OS !== 'web') {
-  try {
-    const stripe = require('@stripe/stripe-react-native');
-    initStripe = stripe.initStripe;
-  } catch (error) {
-    console.warn('[PaymentService] Stripe not available:', error);
+// Dynamic import for Stripe to avoid web bundling issues
+let stripeModule: any = null;
+
+const getStripeModule = async () => {
+  if (Platform.OS === 'web') {
+    // Return web stub for web platform
+    return {
+      initStripe: () => Promise.resolve(),
+      StripeProvider: ({ children }: any) => children,
+      useStripe: () => ({}),
+    };
   }
-}
+  
+  if (!stripeModule) {
+    try {
+      // Dynamic import for native platforms
+      stripeModule = await import('@stripe/stripe-react-native');
+    } catch (error) {
+      console.warn('[PaymentService] Stripe not available:', error);
+      return null;
+    }
+  }
+  
+  return stripeModule;
+};
 
 export type PaymentMethod = 'apple_pay' | 'google_pay';
 
@@ -25,6 +40,8 @@ export interface PaymentResult {
   success: boolean;
   transactionId?: string;
   error?: string;
+  clientSecret?: string;
+  paymentIntentId?: string;
 }
 
 class PaymentService {
@@ -34,26 +51,44 @@ class PaymentService {
     return `iching_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
+  private normalizeRequest(req: PaymentRequest): PaymentRequest | null {
+    const amount = Number(req.amount);
+    const currency = String(req.currency || '').toLowerCase().trim();
+    const allowed = new Set(['usd', 'eur', 'twd', 'jpy', 'hkd', 'sgd']); // 依實際支援調整
+
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    if (!allowed.has(currency)) return null;
+
+    return {
+      amount: Math.round((amount + Number.EPSILON) * 100) / 100,
+      currency,
+      description: req.description?.slice(0, 120) ?? '',
+      orderId: req.orderId || this.generateOrderId(),
+    };
+  }
+
   async initialize() {
     if (this.isInitialized) return;
     
     try {
       const publishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
       if (!publishableKey) {
-        console.warn('[PaymentService] Stripe publishable key not found - using mock mode');
-        this.isInitialized = false;
-        return;
+        throw new Error('[PaymentService] Missing EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY');
       }
 
-      if (!initStripe) {
-        console.warn('[PaymentService] Stripe not available on this platform');
-        this.isInitialized = false;
-        return;
+      const stripe = await getStripeModule();
+      if (!stripe || !stripe.initStripe) {
+        throw new Error('[PaymentService] Stripe not available on this platform');
+      }
+
+      const merchantIdentifier = process.env.EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID;
+      if (Platform.OS === 'ios' && !merchantIdentifier) {
+        throw new Error('[PaymentService] Missing EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID');
       }
       
-      await initStripe({
+      await stripe.initStripe({
         publishableKey,
-        merchantIdentifier: 'merchant.com.yourapp.iching',
+        ...(Platform.OS === 'ios' ? { merchantIdentifier } : {}),
       });
       this.isInitialized = true;
       console.log('[PaymentService] Stripe initialized successfully');
@@ -63,31 +98,36 @@ class PaymentService {
     }
   }
 
-  private async createPaymentIntent(request: PaymentRequest): Promise<{ clientSecret: string } | null> {
+  private async createPaymentIntent(request: PaymentRequest): Promise<{ clientSecret: string; paymentIntentId: string } | null> {
     try {
-      console.log('[PaymentService] Creating payment intent for:', request);
-      
-      const response = await fetch(`${API_CONFIG.paymentEndpoint}/create-intent`, {
+      const safeReq = this.normalizeRequest(request);
+      if (!safeReq) {
+        console.error('[PaymentService] Invalid payment request:', request);
+        return null;
+      }
+
+      const response = await fetch(`${API_CONFIG.paymentEndpoint}/create-payment-intent`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          amount: request.amount * 100, // Stripe uses cents
-          currency: request.currency.toLowerCase(),
-          description: request.description,
-          orderId: request.orderId,
-        }),
+        body: JSON.stringify(safeReq),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('[PaymentService] Failed to create payment intent:', errorData);
+        let msg = `HTTP ${response.status}`;
+        try { msg += ` ${await response.text()}`; } catch {}
+        console.error('[PaymentService] Failed to create payment intent:', msg);
         return null;
       }
 
       const data = await response.json();
-      return { clientSecret: data.clientSecret };
+      if (!data?.clientSecret || !data?.paymentIntentId) {
+        console.error('[PaymentService] Malformed PI response:', data);
+        return null;
+      }
+
+      return { clientSecret: data.clientSecret, paymentIntentId: data.paymentIntentId };
     } catch (error) {
       console.error('[PaymentService] Failed to create payment intent:', error);
       return null;
@@ -98,34 +138,26 @@ class PaymentService {
 
   async processApplePay(request: PaymentRequest): Promise<PaymentResult> {
     try {
-      if (Platform.OS === 'web') {
-        return this.mockApplePay(request);
-      }
-      
-      if (Platform.OS !== 'ios') {
-        return { success: false, error: 'Apple Pay 僅支援 iOS 裝置' };
-      }
+      if (Platform.OS === 'web') return { success: false, error: 'Web 不支援 Apple Pay' };
+      if (Platform.OS !== 'ios') return { success: false, error: 'Apple Pay 僅支援 iOS 裝置' };
 
       await this.initialize();
       
+      const isDev = __DEV__ === true;
       if (!this.isInitialized) {
-        console.log('[PaymentService] Stripe not initialized, using mock mode');
-        return this.mockApplePay(request);
+        if (isDev) return this.mockApplePay(request);
+        return { success: false, error: 'Stripe 初始化失敗（上架版不允許 mock）' };
       }
 
       const paymentIntent = await this.createPaymentIntent(request);
       if (!paymentIntent) {
-        console.log('[PaymentService] Failed to create payment intent, using mock mode');
-        return this.mockApplePay(request);
+        if (isDev) return this.mockApplePay(request);
+        return { success: false, error: '建立 PaymentIntent 失敗' };
       }
 
       // Apple Pay 需要在 React 組件中使用 ApplePayButton 組件
       // 這裡返回 clientSecret 供組件使用
-      return {
-        success: true,
-        transactionId: request.orderId,
-        clientSecret: paymentIntent.clientSecret,
-      } as any;
+      return { success: true, transactionId: request.orderId, ...paymentIntent };
     } catch (error) {
       console.error('[PaymentService] Apple Pay error:', error);
       return { success: false, error: 'Apple Pay 付費失敗' };
@@ -157,19 +189,15 @@ class PaymentService {
 
   async processGooglePay(request: PaymentRequest): Promise<PaymentResult> {
     try {
-      if (Platform.OS === 'web') {
-        return this.mockGooglePay(request);
-      }
-      
-      if (Platform.OS !== 'android') {
-        return { success: false, error: 'Google Pay 僅支援 Android 裝置' };
-      }
+      if (Platform.OS === 'web') return { success: false, error: 'Web 不支援 Google Pay' };
+      if (Platform.OS !== 'android') return { success: false, error: 'Google Pay 僅支援 Android 裝置' };
 
       await this.initialize();
       
+      const isDev = __DEV__ === true;
       if (!this.isInitialized) {
-        console.log('[PaymentService] Stripe not initialized, using mock mode');
-        return this.mockGooglePay(request);
+        if (isDev) return this.mockGooglePay(request);
+        return { success: false, error: 'Stripe 初始化失敗（上架版不允許 mock）' };
       }
 
       const paymentIntent = await this.createPaymentIntent(request);
@@ -180,11 +208,7 @@ class PaymentService {
 
       // Google Pay 需要在 React 組件中使用 GooglePayButton 組件
       // 這裡返回 clientSecret 供組件使用
-      return {
-        success: true,
-        transactionId: request.orderId,
-        clientSecret: paymentIntent.clientSecret,
-      } as any;
+      return { success: true, transactionId: request.orderId, ...paymentIntent };
     } catch (error) {
       console.error('[PaymentService] Google Pay error:', error);
       return { success: false, error: 'Google Pay 付費失敗' };
@@ -202,10 +226,7 @@ class PaymentService {
             text: '確定',
             onPress: () => {
               setTimeout(() => {
-                resolve({
-                  success: true,
-                  transactionId: `mock_google_pay_${this.generateOrderId()}`,
-                });
+                resolve({ success: true, transactionId: `mock_google_pay_${this.generateOrderId()}` });
               }, 1500);
             },
           },
@@ -231,22 +252,30 @@ class PaymentService {
     }
   }
 
-  private async verifyPayment(orderId: string): Promise<{ success: boolean; error?: string }> {
+  async verifyPayment(paymentIntentId: string): Promise<{ success: boolean; error?: string; transactionId?: string; amount?: number; currency?: string; status?: string }> {
     try {
-      const response = await fetch(`${API_CONFIG.paymentEndpoint}/verify`, {
+      const response = await fetch(`${API_CONFIG.paymentEndpoint}/verify-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ orderId }),
+        body: JSON.stringify({ paymentIntentId }),
       });
 
       if (!response.ok) {
-        return { success: false, error: '驗證請求失敗' };
+        let msg = `HTTP ${response.status}`;
+        try { msg += ` ${await response.text()}`; } catch {}
+        return { success: false, error: msg };
       }
 
       const data = await response.json();
-      return { success: data.success };
+      return {
+        success: data.success,
+        transactionId: data.transactionId,
+        amount: data.amount,
+        currency: data.currency,
+        status: data.status
+      };
     } catch (error) {
       console.error('[PaymentService] Payment verification error:', error);
       return { success: false, error: '驗證過程發生錯誤' };
@@ -254,22 +283,9 @@ class PaymentService {
   }
 
   getAvailablePaymentMethods(): PaymentMethod[] {
-    const methods: PaymentMethod[] = [];
-    
-    if (Platform.OS === 'ios') {
-      methods.push('apple_pay');
-    }
-    
-    if (Platform.OS === 'android') {
-      methods.push('google_pay');
-    }
-    
-    // On web, show both options for testing
-    if (Platform.OS === 'web') {
-      methods.push('apple_pay', 'google_pay');
-    }
-    
-    return methods;
+    if (Platform.OS === 'ios') return ['apple_pay'];
+    if (Platform.OS === 'android') return ['google_pay'];
+    return []; // web 上架不顯示
   }
 }
 

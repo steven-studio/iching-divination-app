@@ -13,6 +13,11 @@
       "bundleIdentifier": "com.stevenstudio.ichingapp",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.developer.in-app-payments": [
+          "merchant.com.stevenstudio.ichingapp"
+        ]
       }
     },
     "android": {

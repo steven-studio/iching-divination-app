@@ -1,5 +1,6 @@
 export const API_CONFIG = {
   divinationEndpoint: "https://curly-butterfly-895b.stevenyu-supreme.workers.dev/api/divination",
+  paymentEndpoint: "https://iching-divination-app.vercel.app/api",
 };
 
 export const HISTORY_MAX = 5;
