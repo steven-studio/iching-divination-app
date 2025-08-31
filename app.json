@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "iching-divination-app",
+    "name": "AI易經占卜",
     "slug": "iching-divination-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -16,7 +16,8 @@
         "NSCameraUsageDescription": "為了拍攝或更新您的頭像，本 App 需要使用相機。",
         "NSMicrophoneUsageDescription": "為了錄製語音或影片，本 App 需要使用麥克風。",
         "NSPhotoLibraryUsageDescription": "為了上傳頭像或選擇圖片，本 App 需要讀取您的相簿。",
-        "NSPhotoLibraryAddUsageDescription": "為了將圖片保存到相簿，本 App 需要寫入相簿。"
+        "NSPhotoLibraryAddUsageDescription": "為了將圖片保存到相簿，本 App 需要寫入相簿。",
+        "CFBundleDisplayName": "AI易經占卜"
       },
       "entitlements": {
         "com.apple.developer.in-app-payments": [
